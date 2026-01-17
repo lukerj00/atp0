@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Lean
+.lake/
+lake-packages/
+
+# IDE
+.vscode/
+.idea/
+
+# Results (keep structure, ignore large outputs)
+results/*.json
+
+# Claude
+.claude/
