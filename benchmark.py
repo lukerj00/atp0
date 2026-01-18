@@ -137,7 +137,11 @@ def main():
     results_path = Path(__file__).parent / "results" / f"v0_{int(time.time())}.json"
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
-        json.dump({"score": f"{solved}/{len(problems)}", "results": results}, f, indent=2)
+        json.dump({
+            "config": {"version": "v0", "model": MODEL},
+            "score": f"{solved}/{len(problems)}",
+            "results": results
+        }, f, indent=2)
     print(f"\nResults saved to {results_path}")
 
 
