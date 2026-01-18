@@ -4,7 +4,6 @@
 import argparse
 import json
 import os
-import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
@@ -76,29 +75,8 @@ def generate_proofs(theorem: str, k: int) -> list[str]:
             text = response.text.strip()
             # Extract JSON from markdown code blocks
             if "```" in text:
-                parts = text.split("```")
-                for part in parts[1:]:
-                    part = part.replace("json", "").strip()
-                    if part.startswith("{"):
-                        text = part
-                        break
-            # Try to parse JSON (handle unescaped control chars in proof strings)
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                # Try to find JSON object in text
-                start = text.find("{")
-                end = text.rfind("}") + 1
-                if start >= 0 and end > start:
-                    text = text[start:end]
-                # Fix common JSON issues: unescaped newlines in strings
-                text = re.sub(r'("proof"\s*:\s*")(.*?)(")',
-                              lambda m: m.group(1) + m.group(2).replace('\n', '\\n').replace('\t', '\\t') + m.group(3),
-                              text, flags=re.DOTALL)
-                try:
-                    data = json.loads(text)
-                except json.JSONDecodeError:
-                    raise
+                text = text.split("```")[1].replace("json", "").strip()
+            data = json.loads(text)
             proofs = [c["proof"].strip() for c in data.get("candidates", [])]
             return [p if p.startswith("by") else f"by\n  {p}" for p in proofs if p]
         except Exception as e:
@@ -106,7 +84,6 @@ def generate_proofs(theorem: str, k: int) -> list[str]:
                 time.sleep(15 * (attempt + 1))
                 continue
             if attempt == 2:
-                log(f"  [API error after 3 attempts: {str(e)[:100]}]")
                 return []
             continue
     return []
@@ -124,28 +101,8 @@ def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> lis
             text = response.text.strip()
             # Extract JSON from markdown code blocks
             if "```" in text:
-                parts = text.split("```")
-                for part in parts[1:]:
-                    part = part.replace("json", "").strip()
-                    if part.startswith("{"):
-                        text = part
-                        break
-            # Try to parse JSON (handle unescaped control chars in proof strings)
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                start = text.find("{")
-                end = text.rfind("}") + 1
-                if start >= 0 and end > start:
-                    text = text[start:end]
-                # Fix common JSON issues: unescaped newlines in strings
-                text = re.sub(r'("proof"\s*:\s*")(.*?)(")',
-                              lambda m: m.group(1) + m.group(2).replace('\n', '\\n').replace('\t', '\\t') + m.group(3),
-                              text, flags=re.DOTALL)
-                try:
-                    data = json.loads(text)
-                except json.JSONDecodeError:
-                    raise
+                text = text.split("```")[1].replace("json", "").strip()
+            data = json.loads(text)
             proofs = [c["proof"].strip() for c in data.get("repairs", [])]
             return [p if p.startswith("by") else f"by\n  {p}" for p in proofs if p]
         except Exception as e:
