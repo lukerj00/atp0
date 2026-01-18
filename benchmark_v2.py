@@ -15,6 +15,7 @@ from threading import Lock
 import requests
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 # Load .env file from script directory
 load_dotenv(Path(__file__).parent / ".env")
@@ -143,7 +144,10 @@ def generate_proofs(theorem: str, k: int) -> list[str]:
             response = client.models.generate_content(
                 model=MODEL,
                 contents=prompt,
-                config={"temperature": 0.7}
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                )
             )
             text = response.text.strip()
             if "```" in text:
@@ -177,7 +181,10 @@ def generate_repairs_v2(theorem: str, failed_proof: str, error: str, error_class
             response = client.models.generate_content(
                 model=MODEL,
                 contents=prompt,
-                config={"temperature": 0.8}
+                config=types.GenerateContentConfig(
+                    temperature=0.8,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                )
             )
             text = response.text.strip()
             if "```" in text:

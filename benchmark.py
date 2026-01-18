@@ -9,6 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 # Load .env file from script directory
 load_dotenv(Path(__file__).parent / ".env")
@@ -34,7 +35,10 @@ def generate_proof(statement: str, retries: int = 3) -> str:
             response = client.models.generate_content(
                 model=MODEL,
                 contents=f"Prove this theorem:\n\n{statement}",
-                config={"system_instruction": SYSTEM_PROMPT}
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                )
             )
             return response.text.strip()
         except Exception as e:
