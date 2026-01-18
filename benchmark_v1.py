@@ -4,10 +4,12 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from pathlib import Path
+from threading import Lock
 
 from google import genai
 
@@ -54,6 +56,12 @@ RULES:
 R = {r}"""
 
 client = None
+print_lock = Lock()
+
+def log(msg: str, end="\n", flush=True):
+    """Thread-safe print."""
+    with print_lock:
+        print(msg, end=end, flush=flush)
 
 def generate_proofs(theorem: str, k: int) -> list[str]:
     """Generate K diverse proof candidates."""
@@ -66,10 +74,31 @@ def generate_proofs(theorem: str, k: int) -> list[str]:
                 config={"temperature": 0.7}
             )
             text = response.text.strip()
-            # Extract JSON from response
+            # Extract JSON from markdown code blocks
             if "```" in text:
-                text = text.split("```")[1].replace("json", "").strip()
-            data = json.loads(text)
+                parts = text.split("```")
+                for part in parts[1:]:
+                    part = part.replace("json", "").strip()
+                    if part.startswith("{"):
+                        text = part
+                        break
+            # Try to parse JSON (handle unescaped control chars in proof strings)
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                # Try to find JSON object in text
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    text = text[start:end]
+                # Fix common JSON issues: unescaped newlines in strings
+                text = re.sub(r'("proof"\s*:\s*")(.*?)(")',
+                              lambda m: m.group(1) + m.group(2).replace('\n', '\\n').replace('\t', '\\t') + m.group(3),
+                              text, flags=re.DOTALL)
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError:
+                    raise
             proofs = [c["proof"].strip() for c in data.get("candidates", [])]
             return [p if p.startswith("by") else f"by\n  {p}" for p in proofs if p]
         except Exception as e:
@@ -77,6 +106,7 @@ def generate_proofs(theorem: str, k: int) -> list[str]:
                 time.sleep(15 * (attempt + 1))
                 continue
             if attempt == 2:
+                log(f"  [API error after 3 attempts: {str(e)[:100]}]")
                 return []
             continue
     return []
@@ -92,9 +122,30 @@ def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> lis
                 config={"temperature": 0.8}
             )
             text = response.text.strip()
+            # Extract JSON from markdown code blocks
             if "```" in text:
-                text = text.split("```")[1].replace("json", "").strip()
-            data = json.loads(text)
+                parts = text.split("```")
+                for part in parts[1:]:
+                    part = part.replace("json", "").strip()
+                    if part.startswith("{"):
+                        text = part
+                        break
+            # Try to parse JSON (handle unescaped control chars in proof strings)
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start >= 0 and end > start:
+                    text = text[start:end]
+                # Fix common JSON issues: unescaped newlines in strings
+                text = re.sub(r'("proof"\s*:\s*")(.*?)(")',
+                              lambda m: m.group(1) + m.group(2).replace('\n', '\\n').replace('\t', '\\t') + m.group(3),
+                              text, flags=re.DOTALL)
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError:
+                    raise
             proofs = [c["proof"].strip() for c in data.get("repairs", [])]
             return [p if p.startswith("by") else f"by\n  {p}" for p in proofs if p]
         except Exception as e:
@@ -104,9 +155,8 @@ def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> lis
             return []
     return []
 
-def verify_proof(header: str, theorem: str, proof: str, idx: int) -> dict:
+def verify_proof(header: str, theorem: str, proof: str, idx: int, prob_idx: int = 0) -> dict:
     """Verify a single proof, return result dict."""
-    # Clean proof
     if "```" in proof:
         proof = "\n".join(l for l in proof.split("\n") if "```" not in l)
     proof = proof.strip()
@@ -114,7 +164,8 @@ def verify_proof(header: str, theorem: str, proof: str, idx: int) -> dict:
         proof = f"by\n  {proof}"
 
     lean_code = f"{header}\n\n{theorem} :=\n{proof}\n"
-    verify_file = LEAN_PROJECT / f"Verify{idx}.lean"
+    # Use unique file per problem+candidate to avoid conflicts in parallel
+    verify_file = LEAN_PROJECT / f"Verify_p{prob_idx}_c{idx}.lean"
     verify_file.write_text(lean_code)
 
     start = time.time()
@@ -130,7 +181,6 @@ def verify_proof(header: str, theorem: str, proof: str, idx: int) -> dict:
         success = result.returncode == 0
         output = result.stdout + result.stderr
 
-        # Extract error excerpt
         error_excerpt = None
         if not success:
             lines = output.split("\n")
@@ -152,21 +202,96 @@ def verify_proof(header: str, theorem: str, proof: str, idx: int) -> dict:
     finally:
         verify_file.unlink(missing_ok=True)
 
-def verify_many(header: str, theorem: str, proofs: list[str], max_parallel: int) -> list[dict]:
-    """Verify multiple proofs in parallel."""
+def verify_many(header: str, theorem: str, proofs: list[str], max_parallel: int, executor: ThreadPoolExecutor, prob_idx: int = 0) -> list[dict]:
+    """Verify multiple proofs in parallel using shared executor."""
     results = []
-    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
-        futures = {executor.submit(verify_proof, header, theorem, p, i): i for i, p in enumerate(proofs)}
-        for future in as_completed(futures):
-            results.append(future.result())
+    futures = {executor.submit(verify_proof, header, theorem, p, i, prob_idx): i for i, p in enumerate(proofs)}
+    for future in as_completed(futures):
+        results.append(future.result())
     return sorted(results, key=lambda x: x["idx"])
+
+def process_problem(prob: dict, prob_idx: int, args, executor: ThreadPoolExecutor, prefetched_proofs: list[str] | None = None) -> dict:
+    """Process a single problem, return result dict."""
+    prob_id = prob["id"]
+
+    # Use prefetched proofs if available, otherwise generate
+    if prefetched_proofs is not None:
+        proofs = prefetched_proofs
+        log(f"  Using prefetched {len(proofs)} candidates")
+    else:
+        log(f"  Generating {args.k} candidates...", end=" ")
+        proofs = generate_proofs(prob["theorem"], args.k)
+        log(f"got {len(proofs)}")
+
+    if not proofs:
+        log(f"  ✗ No proofs generated")
+        return {"id": prob_id, "success": False, "phase": "propose", "attempts": [], "pass_at_1": False, "repair_win": False}
+
+    # Verify in parallel
+    log(f"  Verifying...", end=" ")
+    verify_results = verify_many(prob["header"], prob["theorem"], proofs, args.max_parallel, executor, prob_idx)
+
+    # Check for success
+    successes = [r for r in verify_results if r["success"]]
+    if successes:
+        winner = successes[0]
+        log(f"✓ SOLVED (candidate {winner['idx']}, {winner['time_ms']}ms)")
+        return {
+            "id": prob_id, "success": True, "phase": "propose",
+            "winning_idx": winner["idx"], "proof": winner["proof"],
+            "attempts": verify_results,
+            "pass_at_1": winner["idx"] == 0,
+            "repair_win": False
+        }
+
+    # All failed - try repair
+    log(f"all {len(proofs)} failed")
+
+    if args.no_repair:
+        return {"id": prob_id, "success": False, "phase": "propose", "attempts": verify_results, "pass_at_1": False, "repair_win": False}
+
+    # Pick best failure (prefer shorter errors)
+    best_failure = min(verify_results, key=lambda x: len(x.get("error_excerpt", "") or ""))
+
+    log(f"  Repairing (based on candidate {best_failure['idx']})...", end=" ")
+    repairs = generate_repairs(prob["theorem"], best_failure["proof"], best_failure["error_excerpt"] or "", args.r)
+    log(f"got {len(repairs)}")
+
+    repair_results = []
+    if repairs:
+        log(f"  Verifying repairs...", end=" ")
+        repair_results = verify_many(prob["header"], prob["theorem"], repairs, args.max_parallel, executor, prob_idx + 1000)
+        repair_successes_list = [r for r in repair_results if r["success"]]
+
+        if repair_successes_list:
+            winner = repair_successes_list[0]
+            log(f"✓ SOLVED via repair ({winner['time_ms']}ms)")
+            return {
+                "id": prob_id, "success": True, "phase": "repair",
+                "proof": winner["proof"],
+                "propose_attempts": verify_results,
+                "repair_attempts": repair_results,
+                "pass_at_1": False,
+                "repair_win": True
+            }
+        log(f"all repairs failed")
+
+    log(f"  ✗ FAILED")
+    return {
+        "id": prob_id, "success": False, "phase": "repair" if repairs else "propose",
+        "propose_attempts": verify_results,
+        "repair_attempts": repair_results,
+        "pass_at_1": False,
+        "repair_win": False
+    }
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--k", type=int, default=3, help="Number of candidates to generate")
     parser.add_argument("--r", type=int, default=2, help="Number of repair candidates")
-    parser.add_argument("--max-parallel", type=int, default=2, help="Max parallel verifications")
+    parser.add_argument("--max-parallel", type=int, default=4, help="Max parallel Lean verifications")
     parser.add_argument("--no-repair", action="store_true", help="Disable repair phase")
+    parser.add_argument("--pipeline", action="store_true", help="Prefetch next problem's candidates while verifying")
     args = parser.parse_args()
 
     # Setup
@@ -186,81 +311,41 @@ def main():
     pass_at_1 = 0
     repair_successes = 0
 
-    print(f"V1 Benchmark: K={args.k}, R={args.r}, max_parallel={args.max_parallel}")
+    print(f"V1 Benchmark: K={args.k}, R={args.r}, max_parallel={args.max_parallel}, pipeline={args.pipeline}")
     print(f"Running on {len(problems)} problems...\n")
 
-    for i, prob in enumerate(problems):
-        prob_id = prob["id"]
-        print(f"[{i+1}/{len(problems)}] {prob_id}", flush=True)
+    # Shared executor for all Lean verifications
+    with ThreadPoolExecutor(max_workers=args.max_parallel) as executor:
+        # For pipelining: executor for prefetching API calls
+        with ThreadPoolExecutor(max_workers=2) as api_executor:
+            prefetch_future: Future | None = None
+            prefetched_proofs: list[str] | None = None
 
-        # Generate K candidates
-        print(f"  Generating {args.k} candidates...", end=" ", flush=True)
-        proofs = generate_proofs(prob["theorem"], args.k)
-        print(f"got {len(proofs)}", flush=True)
+            for i, prob in enumerate(problems):
+                log(f"[{i+1}/{len(problems)}] {prob['id']}")
 
-        if not proofs:
-            print(f"  ✗ No proofs generated")
-            results.append({"id": prob_id, "success": False, "phase": "propose", "attempts": []})
-            continue
+                # Get prefetched proofs if available
+                if prefetch_future is not None:
+                    prefetched_proofs = prefetch_future.result()
+                    prefetch_future = None
+                else:
+                    prefetched_proofs = None
 
-        # Verify in parallel
-        print(f"  Verifying...", end=" ", flush=True)
-        verify_results = verify_many(prob["header"], prob["theorem"], proofs, args.max_parallel)
+                # Start prefetching next problem while we process this one
+                if args.pipeline and i + 1 < len(problems):
+                    next_prob = problems[i + 1]
+                    prefetch_future = api_executor.submit(generate_proofs, next_prob["theorem"], args.k)
 
-        # Check for success
-        successes = [r for r in verify_results if r["success"]]
-        if successes:
-            winner = successes[0]
-            print(f"✓ SOLVED (candidate {winner['idx']}, {winner['time_ms']}ms)")
-            solved += 1
-            if winner["idx"] == 0:
-                pass_at_1 += 1
-            results.append({
-                "id": prob_id, "success": True, "phase": "propose",
-                "winning_idx": winner["idx"], "proof": winner["proof"],
-                "attempts": verify_results
-            })
-            continue
+                # Process current problem
+                result = process_problem(prob, i, args, executor, prefetched_proofs)
+                results.append(result)
 
-        # All failed - try repair
-        print(f"all {len(proofs)} failed", flush=True)
-
-        if args.no_repair:
-            results.append({"id": prob_id, "success": False, "phase": "propose", "attempts": verify_results})
-            continue
-
-        # Pick best failure (prefer shorter errors)
-        best_failure = min(verify_results, key=lambda x: len(x.get("error_excerpt", "") or ""))
-
-        print(f"  Repairing (based on candidate {best_failure['idx']})...", end=" ", flush=True)
-        repairs = generate_repairs(prob["theorem"], best_failure["proof"], best_failure["error_excerpt"] or "", args.r)
-        print(f"got {len(repairs)}", flush=True)
-
-        if repairs:
-            print(f"  Verifying repairs...", end=" ", flush=True)
-            repair_results = verify_many(prob["header"], prob["theorem"], repairs, args.max_parallel)
-            repair_successes_list = [r for r in repair_results if r["success"]]
-
-            if repair_successes_list:
-                winner = repair_successes_list[0]
-                print(f"✓ SOLVED via repair ({winner['time_ms']}ms)")
-                solved += 1
-                repair_successes += 1
-                results.append({
-                    "id": prob_id, "success": True, "phase": "repair",
-                    "proof": winner["proof"],
-                    "propose_attempts": verify_results,
-                    "repair_attempts": repair_results
-                })
-                continue
-            print(f"all repairs failed")
-
-        print(f"  ✗ FAILED")
-        results.append({
-            "id": prob_id, "success": False, "phase": "repair" if repairs else "propose",
-            "propose_attempts": verify_results,
-            "repair_attempts": repair_results if repairs else []
-        })
+                if result["success"]:
+                    solved += 1
+                if result.get("pass_at_1"):
+                    pass_at_1 += 1
+                if result.get("repair_win"):
+                    repair_successes += 1
 
     # Summary
     print(f"\n{'='*50}")
@@ -275,7 +360,7 @@ def main():
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
-            "config": {"k": args.k, "r": args.r, "max_parallel": args.max_parallel},
+            "config": {"k": args.k, "r": args.r, "max_parallel": args.max_parallel, "pipeline": args.pipeline},
             "score": f"{solved}/{len(problems)}",
             "pass_at_1": pass_at_1,
             "repair_successes": repair_successes,

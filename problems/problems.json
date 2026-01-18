@@ -1,39 +1,15 @@
 [
   {
-    "id": "putnam_1962_a1",
-    "description": "Given five points in a plane, no three collinear, show that some four form a convex quadrilateral.",
-    "header": "import Mathlib\nopen MeasureTheory",
-    "theorem": "theorem putnam_1962_a1\n(S : Set (ℝ × ℝ))\n(hS : S.ncard = 5)\n(hnoncol : ∀ s ⊆ S, s.ncard = 3 → ¬Collinear ℝ s)\n: ∃ T ⊆ S, T.ncard = 4 ∧ ¬∃ t ∈ T, t ∈ convexHull ℝ (T \\ {t})"
-  },
-  {
-    "id": "putnam_1963_a2",
-    "description": "Prove f(n)=n for multiplicative strictly increasing f with f(2)=2.",
-    "header": "import Mathlib\nopen Topology Filter",
-    "theorem": "theorem putnam_1963_a2\n(f : ℕ → ℕ)\n(hfpos : ∀ n, f n > 0)\n(hfinc : StrictMonoOn f (Set.Ici 1))\n(hf2 : f 2 = 2)\n(hfmn : ∀ m n, m > 0 → n > 0 → IsRelPrime m n → f (m * n) = f m * f n)\n: ∀ n > 0, f n = n"
-  },
-  {
-    "id": "putnam_1964_a1",
-    "description": "For 6 distinct points in plane, show D/d >= sqrt(3).",
+    "id": "putnam_1987_a1",
+    "description": "Find all polynomials with real coefficients satisfying given functional equation.",
     "header": "import Mathlib",
-    "theorem": "theorem putnam_1964_a1\n(A : Finset (EuclideanSpace ℝ (Fin 2)))\n(hAcard : A.card = 6)\n(dists : Set ℝ)\n(hdists : dists = {d : ℝ | ∃ a b : EuclideanSpace ℝ (Fin 2), a ∈ A ∧ b ∈ A ∧ a ≠ b ∧ d = dist a b})\n: (sSup dists / sInf dists ≥ Real.sqrt 3)"
+    "theorem": "theorem putnam_1987_a1\n(f : Polynomial ℝ)\n(hf : ∀ x : ℝ, f.eval x * f.eval (2*x^2) = f.eval (2*x^3 + x))\n: f = 1 ∨ ∃ n : ℕ, f = (Polynomial.X^2 + 1)^n"
   },
   {
-    "id": "putnam_1965_a2",
-    "description": "Prove binomial identity involving floor function.",
-    "header": "import Mathlib\nopen EuclideanGeometry",
-    "theorem": "theorem putnam_1965_a2\n: ∀ n > 0, ∑ r ∈ Finset.Icc 0 ((n - 1)/2), ((n - 2*r) * Nat.choose n r / (n : ℚ))^2 = (Nat.choose (2*n - 2) (n - 1))/(n : ℚ)"
-  },
-  {
-    "id": "putnam_1966_a1",
-    "description": "Prove xy = f(x+y) - f(x-y) for specific sequence sum.",
+    "id": "putnam_1991_a1",
+    "description": "Prove inequality involving arctan of consecutive integers.",
     "header": "import Mathlib",
-    "theorem": "theorem putnam_1966_a1\n(f : ℤ → ℤ)\n(hf : f = fun n : ℤ => ∑ m ∈ Finset.Icc 0 n, (if Even m then m / 2 else (m - 1)/2))\n: ∀ x y : ℤ, x > 0 ∧ y > 0 ∧ x > y → x * y = f (x + y) - f (x - y)"
-  },
-  {
-    "id": "putnam_1967_a1",
-    "description": "Prove |a1| + |2a2| + ... + |nan| <= 1 given |f(x)| <= |sin x|.",
-    "header": "import Mathlib\nopen Nat Topology Filter",
-    "theorem": "theorem putnam_1967_a1\n(n : ℕ) (hn : n > 0)\n(a : Set.Icc 1 n → ℝ)\n(f : ℝ → ℝ)\n(hf : f = (fun x : ℝ => ∑ i : Set.Icc 1 n, a i * Real.sin (i * x)))\n(flesin : ∀ x : ℝ, abs (f x) ≤ abs (Real.sin x))\n: abs (∑ i : Set.Icc 1 n, i * a i) ≤ 1"
+    "theorem": "theorem putnam_1991_a1\n: ∀ n : ℕ, n > 0 → Real.arctan (n + 1 : ℝ) - Real.arctan n < 1 / (n^2 + n + 1)"
   },
   {
     "id": "putnam_1968_a1",
@@ -42,40 +18,10 @@
     "theorem": "theorem putnam_1968_a1\n: 22/7 - Real.pi = ∫ x in (0)..1, x^4 * (1 - x)^4 / (1 + x^2)"
   },
   {
-    "id": "putnam_1968_a2",
-    "description": "Prove existence of rationals r,s satisfying approximation conditions.",
+    "id": "putnam_1985_a1",
+    "description": "Determine value of product involving cubic roots.",
     "header": "import Mathlib",
-    "theorem": "theorem putnam_1968_a2\n(a b c d e f : ℤ)\n(ε : ℝ)\n(hne : a * d ≠ b * c)\n(hε : ε > 0)\n: ∃ r s : ℚ, (|r * a + s * b - e| : ℝ) ∈ Set.Ioo 0 ε ∧ (|r * c + s * d - f| : ℝ) ∈ Set.Ioo 0 ε"
-  },
-  {
-    "id": "putnam_1969_a2",
-    "description": "Prove determinant formula for |i-j| matrix.",
-    "header": "import Mathlib\nopen Matrix Filter Topology Set Nat",
-    "theorem": "theorem putnam_1969_a2\n(D : (n : ℕ) → Matrix (Fin n) (Fin n) ℝ)\n(hD : D = fun (n : ℕ) => λ (i : Fin n) (j : Fin n) => |(i : ℝ) - (j : ℝ)| )\n: ∀ n, n ≥ 2 → (D n).det = (-1)^((n : ℤ)-1) * ((n : ℤ)-1) * 2^((n : ℤ)-2)"
-  },
-  {
-    "id": "putnam_1970_a1",
-    "description": "Prove power series of e^ax cos(bx) has 0 or infinitely many zero coefficients.",
-    "header": "import Mathlib\nopen Metric Set EuclideanGeometry",
-    "theorem": "theorem putnam_1970_a1\n(a b : ℝ)\n(ha : a > 0)\n(hb : b > 0)\n(f : ℝ → ℝ)\n(f_def : f = fun x : ℝ => Real.exp (a*x) * Real.cos (b*x))\n(p : ℕ → ℝ)\n(hp : ∃ c : ℝ, c > 0 ∧ ∀ x ∈ ball 0 c, ∑' n : ℕ, (p n)*x^n = f x)\n(S : Set ℕ)\n(S_def : S = {n : ℕ | p n = 0})\n: S = ∅ ∨ ¬Finite S"
-  },
-  {
-    "id": "putnam_1970_a2",
-    "description": "Prove no points in punctured disk satisfy given polynomial equation.",
-    "header": "import Mathlib\nopen Metric Set EuclideanGeometry",
-    "theorem": "theorem putnam_1970_a2\n(A B C D E F G : ℝ)\n(hle : B^2 - 4*A*C < 0)\n: ∃ δ > 0, ¬∃ x y : ℝ, x^2 + y^2 ∈ Set.Ioo 0 (δ^2) ∧\nA*x^2 + B*x*y + C*y^2 + D*x^3 + E*x^2*y + F*x*y^2 + G*y^3 = 0"
-  },
-  {
-    "id": "putnam_1971_a1",
-    "description": "Prove lattice point exists in interior of segment between 9 lattice points.",
-    "header": "import Mathlib\nopen Set",
-    "theorem": "theorem putnam_1971_a1\n(S : Set (ℤ × ℤ × ℤ))\n(hS : S.ncard = 9)\n(L : (ℤ × ℤ × ℤ) × (ℤ × ℤ × ℤ) → Set (ℝ × ℝ × ℝ))\n(hL : L = fun ((a, b, c), (d, e, f)) =>\n{(t*a + (1-t)*d, t*b + (1-t)*e, t*c + (1-t)*f) | t ∈ Ioo (0 : ℝ) 1})\n: ∃ x y z : ℤ, ∃ P Q : ℤ × ℤ × ℤ, P ∈ S ∧ Q ∈ S ∧ P ≠ Q ∧ ((x : ℝ), (y : ℝ), (z : ℝ)) ∈ L (P, Q)"
-  },
-  {
-    "id": "putnam_1971_a2",
-    "description": "Determine all polynomials P with P(x^2+1) = P(x)^2+1 and P(0)=0.",
-    "header": "import Mathlib\nopen Set\nabbrev putnam_1971_a2_solution : Set (Polynomial ℝ) := {Polynomial.X}",
-    "theorem": "theorem putnam_1971_a2\n    (P : Polynomial ℝ) :\n    (P.eval 0 = 0 ∧ (∀ x : ℝ, P.eval (x^2 + 1) = (P.eval x)^2 + 1)) ↔ P ∈ putnam_1971_a2_solution"
+    "theorem": "theorem putnam_1985_a1\n: ∏ n in Finset.Icc 0 999, ((n : ℝ)^3 - 1) / ((n : ℝ)^3 + 1) = 2/3"
   },
   {
     "id": "putnam_1988_a1",
@@ -84,39 +30,33 @@
     "theorem": "theorem putnam_1988_a1\n    (R : Set (Fin 2 → ℝ))\n    (hR : R = {p | |p 0| - |p 1| ≤ 1 ∧ |p 1| ≤ 1}) :\n    (volume R).toReal = putnam_1988_a1_solution"
   },
   {
-    "id": "putnam_1985_a1",
-    "description": "Determine value of product involving cubic roots.",
-    "header": "import Mathlib",
-    "theorem": "theorem putnam_1985_a1\n: ∏ n in Finset.Icc 0 999, ((n : ℝ)^3 - 1) / ((n : ℝ)^3 + 1) = 2/3"
+    "id": "putnam_1971_a2",
+    "description": "Determine all polynomials P with P(x^2+1) = P(x)^2+1 and P(0)=0.",
+    "header": "import Mathlib\nopen Set\nabbrev putnam_1971_a2_solution : Set (Polynomial ℝ) := {Polynomial.X}",
+    "theorem": "theorem putnam_1971_a2\n    (P : Polynomial ℝ) :\n    (P.eval 0 = 0 ∧ (∀ x : ℝ, P.eval (x^2 + 1) = (P.eval x)^2 + 1)) ↔ P ∈ putnam_1971_a2_solution"
   },
   {
-    "id": "putnam_1986_a1",
-    "description": "Find S_n involving floor of square roots.",
-    "header": "import Mathlib",
-    "theorem": "theorem putnam_1986_a1\n(S : ℕ → ℤ)\n(hS : S = fun n => ∑ k in Finset.Icc 1 n, (Int.floor (Real.sqrt k) : ℤ))\n: ∀ n > 0, S n = n * Int.floor (Real.sqrt n) + (2 * (Int.floor (Real.sqrt n))^3 + 3 * (Int.floor (Real.sqrt n))^2 + Int.floor (Real.sqrt n)) / 6 - (Int.floor (Real.sqrt n)) * ((Int.floor (Real.sqrt n))^2 + Int.floor (Real.sqrt n)) / 2"
+    "id": "putnam_1963_a2",
+    "description": "Prove f(n)=n for multiplicative strictly increasing f with f(2)=2.",
+    "header": "import Mathlib\nopen Topology Filter",
+    "theorem": "theorem putnam_1963_a2\n(f : ℕ → ℕ)\n(hfpos : ∀ n, f n > 0)\n(hfinc : StrictMonoOn f (Set.Ici 1))\n(hf2 : f 2 = 2)\n(hfmn : ∀ m n, m > 0 → n > 0 → IsRelPrime m n → f (m * n) = f m * f n)\n: ∀ n > 0, f n = n"
   },
   {
-    "id": "putnam_1987_a1",
-    "description": "Find all polynomials with real coefficients satisfying given functional equation.",
+    "id": "putnam_1966_a1",
+    "description": "Prove xy = f(x+y) - f(x-y) for specific sequence sum.",
     "header": "import Mathlib",
-    "theorem": "theorem putnam_1987_a1\n(f : Polynomial ℝ)\n(hf : ∀ x : ℝ, f.eval x * f.eval (2*x^2) = f.eval (2*x^3 + x))\n: f = 1 ∨ ∃ n : ℕ, f = (Polynomial.X^2 + 1)^n"
+    "theorem": "theorem putnam_1966_a1\n(f : ℤ → ℤ)\n(hf : f = fun n : ℤ => ∑ m ∈ Finset.Icc 0 n, (if Even m then m / 2 else (m - 1)/2))\n: ∀ x y : ℤ, x > 0 ∧ y > 0 ∧ x > y → x * y = f (x + y) - f (x - y)"
   },
   {
-    "id": "putnam_1989_a1",
-    "description": "Prove formula for integer post office problem.",
-    "header": "import Mathlib",
-    "theorem": "theorem putnam_1989_a1\n: ∀ n > 0, (∃! a : Fin n → ℤ, ∀ i : Fin n, 0 < a i ∧ (∑ j : Fin n, a j) = n * (n + 1) / 2 ∧ (∑ j : Fin n, (a j)^2) = n * (n + 1) * (2*n + 1) / 6)"
+    "id": "putnam_1970_a2",
+    "description": "Prove no points in punctured disk satisfy given polynomial equation.",
+    "header": "import Mathlib\nopen Metric Set EuclideanGeometry",
+    "theorem": "theorem putnam_1970_a2\n(A B C D E F G : ℝ)\n(hle : B^2 - 4*A*C < 0)\n: ∃ δ > 0, ¬∃ x y : ℝ, x^2 + y^2 ∈ Set.Ioo 0 (δ^2) ∧\nA*x^2 + B*x*y + C*y^2 + D*x^3 + E*x^2*y + F*x*y^2 + G*y^3 = 0"
   },
   {
-    "id": "putnam_1990_a1",
-    "description": "Find expected number of matches in card problem.",
+    "id": "putnam_1968_a2",
+    "description": "Prove existence of rationals r,s satisfying approximation conditions.",
     "header": "import Mathlib",
-    "theorem": "theorem putnam_1990_a1\n(n : ℕ)\n(hn : n > 0)\n: (n : ℝ) * (n - 1) / 4 + 1 = (∑ k in Finset.Icc 1 n, k * (Nat.choose (n - 1) (k - 1))^2 * Nat.factorial (n - k) * Nat.factorial (n - k)) / Nat.factorial n"
-  },
-  {
-    "id": "putnam_1991_a1",
-    "description": "Prove inequality involving arctan of consecutive integers.",
-    "header": "import Mathlib",
-    "theorem": "theorem putnam_1991_a1\n: ∀ n : ℕ, n > 0 → Real.arctan (n + 1 : ℝ) - Real.arctan n < 1 / (n^2 + n + 1)"
+    "theorem": "theorem putnam_1968_a2\n(a b c d e f : ℤ)\n(ε : ℝ)\n(hne : a * d ≠ b * c)\n(hε : ε > 0)\n: ∃ r s : ℚ, (|r * a + s * b - e| : ℝ) ∈ Set.Ioo 0 ε ∧ (|r * c + s * d - f| : ℝ) ∈ Set.Ioo 0 ε"
   }
 ]
