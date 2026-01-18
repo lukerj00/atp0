@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 
@@ -135,8 +135,9 @@ def verify_proof(header: str, theorem: str, proof: str, idx: int, prob_idx: int 
             timeout=TIMEOUT
         )
         elapsed = int((time.time() - start) * 1000)
-        success = result.returncode == 0
         output = result.stdout + result.stderr
+        # Reject proofs that use sorry (Lean only warns, doesn't error)
+        success = result.returncode == 0 and "uses 'sorry'" not in output
 
         error_excerpt = None
         if not success:
@@ -167,18 +168,13 @@ def verify_many(header: str, theorem: str, proofs: list[str], max_parallel: int,
         results.append(future.result())
     return sorted(results, key=lambda x: x["idx"])
 
-def process_problem(prob: dict, prob_idx: int, args, executor: ThreadPoolExecutor, prefetched_proofs: list[str] | None = None) -> dict:
+def process_problem(prob: dict, prob_idx: int, args, executor: ThreadPoolExecutor) -> dict:
     """Process a single problem, return result dict."""
     prob_id = prob["id"]
 
-    # Use prefetched proofs if available, otherwise generate
-    if prefetched_proofs is not None:
-        proofs = prefetched_proofs
-        log(f"  Using prefetched {len(proofs)} candidates")
-    else:
-        log(f"  Generating {args.k} candidates...", end=" ")
-        proofs = generate_proofs(prob["theorem"], args.k)
-        log(f"got {len(proofs)}")
+    log(f"  Generating {args.k} candidates...", end=" ")
+    proofs = generate_proofs(prob["theorem"], args.k)
+    log(f"got {len(proofs)}")
 
     if not proofs:
         log(f"  ✗ No proofs generated")
@@ -248,7 +244,6 @@ def main():
     parser.add_argument("--r", type=int, default=2, help="Number of repair candidates")
     parser.add_argument("--max-parallel", type=int, default=4, help="Max parallel Lean verifications")
     parser.add_argument("--no-repair", action="store_true", help="Disable repair phase")
-    parser.add_argument("--pipeline", action="store_true", help="Prefetch next problem's candidates while verifying")
     args = parser.parse_args()
 
     # Setup
@@ -268,41 +263,23 @@ def main():
     pass_at_1 = 0
     repair_successes = 0
 
-    print(f"V1 Benchmark: K={args.k}, R={args.r}, max_parallel={args.max_parallel}, pipeline={args.pipeline}")
+    print(f"V1 Benchmark: K={args.k}, R={args.r}, max_parallel={args.max_parallel}")
     print(f"Running on {len(problems)} problems...\n")
 
     # Shared executor for all Lean verifications
     with ThreadPoolExecutor(max_workers=args.max_parallel) as executor:
-        # For pipelining: executor for prefetching API calls
-        with ThreadPoolExecutor(max_workers=2) as api_executor:
-            prefetch_future: Future | None = None
-            prefetched_proofs: list[str] | None = None
+        for i, prob in enumerate(problems):
+            log(f"[{i+1}/{len(problems)}] {prob['id']}")
 
-            for i, prob in enumerate(problems):
-                log(f"[{i+1}/{len(problems)}] {prob['id']}")
+            result = process_problem(prob, i, args, executor)
+            results.append(result)
 
-                # Get prefetched proofs if available
-                if prefetch_future is not None:
-                    prefetched_proofs = prefetch_future.result()
-                    prefetch_future = None
-                else:
-                    prefetched_proofs = None
-
-                # Start prefetching next problem while we process this one
-                if args.pipeline and i + 1 < len(problems):
-                    next_prob = problems[i + 1]
-                    prefetch_future = api_executor.submit(generate_proofs, next_prob["theorem"], args.k)
-
-                # Process current problem
-                result = process_problem(prob, i, args, executor, prefetched_proofs)
-                results.append(result)
-
-                if result["success"]:
-                    solved += 1
-                if result.get("pass_at_1"):
-                    pass_at_1 += 1
-                if result.get("repair_win"):
-                    repair_successes += 1
+            if result["success"]:
+                solved += 1
+            if result.get("pass_at_1"):
+                pass_at_1 += 1
+            if result.get("repair_win"):
+                repair_successes += 1
 
     # Summary
     print(f"\n{'='*50}")
@@ -317,7 +294,7 @@ def main():
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
-            "config": {"k": args.k, "r": args.r, "max_parallel": args.max_parallel, "pipeline": args.pipeline},
+            "config": {"k": args.k, "r": args.r, "max_parallel": args.max_parallel},
             "score": f"{solved}/{len(problems)}",
             "pass_at_1": pass_at_1,
             "repair_successes": repair_successes,
