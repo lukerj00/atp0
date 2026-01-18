@@ -102,7 +102,20 @@ def main():
     # Set both to avoid SDK warning and ensure correct key is used
     os.environ["GEMINI_API_KEY"] = api_key
     os.environ["GOOGLE_API_KEY"] = api_key
-    client = genai.Client(api_key=api_key)
+    # Configure client with longer timeout and automatic retries
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            timeout=120000,  # 120s timeout
+            retry_options=types.HttpRetryOptions(
+                attempts=3,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exp_base=2.0,
+                http_status_codes=[429, 500, 502, 503, 504]
+            )
+        )
+    )
 
     results = []
     solved = 0

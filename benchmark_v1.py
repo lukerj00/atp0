@@ -7,8 +7,10 @@ import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
+from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
@@ -347,7 +349,20 @@ def main():
     # Set both to avoid SDK warning and ensure correct key is used
     os.environ["GEMINI_API_KEY"] = api_key
     os.environ["GOOGLE_API_KEY"] = api_key
-    client = genai.Client(api_key=api_key)
+    # Configure client with longer timeout and automatic retries
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            timeout=120000,  # 120s timeout
+            retry_options=types.HttpRetryOptions(
+                attempts=3,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exp_base=2.0,
+                http_status_codes=[429, 500, 502, 503, 504]
+            )
+        )
+    )
 
     problems_path = Path(__file__).parent / "problems" / args.problems
     with open(problems_path) as f:
@@ -387,10 +402,13 @@ def main():
 
     # Save
     prob_tag = args.problems.replace(".json", "").replace("problems_", "").replace("problems", "default")
-    results_path = Path(__file__).parent / "results" / f"v1_{prob_tag}_k{args.k}_r{args.r}_{int(time.time())}.json"
+    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    timestamp_readable = now.strftime("%y%m%d-%H%M")
+    results_path = Path(__file__).parent / "results" / f"v1_{prob_tag}_k{args.k}_r{args.r}_{timestamp_readable}.json"
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S PST"),
             "config": {"version": "v1", "model": MODEL, "k": args.k, "r": args.r, "mode": mode, "timeout": args.timeout, "max_parallel": args.max_parallel, "problems": args.problems},
             "score": f"{solved}/{len(problems)}",
             "pass_at_1": pass_at_1,

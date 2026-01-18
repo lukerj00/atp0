@@ -9,8 +9,10 @@ import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
+from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
@@ -489,8 +491,8 @@ def process_problem_v2(prob: dict, prob_idx: int, args, executor: ThreadPoolExec
 
 def main():
     parser = argparse.ArgumentParser(description="V2 benchmark: Multi-round repair with caching")
-    parser.add_argument("--k", type=int, default=8, help="Initial candidates to generate")
-    parser.add_argument("--max-rounds", type=int, default=3, help="Max repair rounds")
+    parser.add_argument("--k", type=int, default=3, help="Initial candidates to generate")
+    parser.add_argument("--max-rounds", type=int, default=2, help="Max repair rounds")
     parser.add_argument("--top-failures", type=int, default=2, help="Failures to repair per round")
     parser.add_argument("--repairs-per-failure", type=int, default=3, help="Repairs per failure")
     parser.add_argument("--max-verifications", type=int, default=50, help="Total verification budget per problem")
@@ -509,7 +511,20 @@ def main():
     # Set both to avoid SDK warning and ensure correct key is used
     os.environ["GEMINI_API_KEY"] = api_key
     os.environ["GOOGLE_API_KEY"] = api_key
-    client = genai.Client(api_key=api_key)
+    # Configure client with longer timeout and automatic retries
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            timeout=120000,  # 120s timeout
+            retry_options=types.HttpRetryOptions(
+                attempts=3,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exp_base=2.0,
+                http_status_codes=[429, 500, 502, 503, 504]
+            )
+        )
+    )
 
     problems_path = Path(__file__).parent / "problems" / args.problems
     with open(problems_path) as f:
@@ -560,10 +575,13 @@ def main():
 
     # Save
     prob_tag = args.problems.replace(".json", "").replace("problems_", "").replace("problems", "default")
-    results_path = Path(__file__).parent / "results" / f"v2_{prob_tag}_k{args.k}_r{args.max_rounds}_{int(time.time())}.json"
+    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    timestamp_readable = now.strftime("%y%m%d-%H%M")
+    results_path = Path(__file__).parent / "results" / f"v2_{prob_tag}_k{args.k}_r{args.max_rounds}_{timestamp_readable}.json"
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S PST"),
             "config": {
                 "version": "v2", "model": MODEL,
                 "k": args.k, "max_rounds": args.max_rounds,
