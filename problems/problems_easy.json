@@ -1,0 +1,62 @@
+[
+  {
+    "id": "easy_poly_1",
+    "description": "Constant polynomial functional equation.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_poly_1 (f : Polynomial ℝ)\n  (h : ∀ x : ℝ, f.eval x = 3) : f = 3"
+  },
+  {
+    "id": "easy_poly_2",
+    "description": "Simple quadratic root property.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_poly_2 (x : ℝ) : x^2 + 1 ≠ 0"
+  },
+  {
+    "id": "easy_ineq_1",
+    "description": "Basic inequality with squares.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_ineq_1 (x : ℝ) : x^2 ≥ 0"
+  },
+  {
+    "id": "easy_ineq_2",
+    "description": "Triangle inequality.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_ineq_2 (x y : ℝ) : |x + y| ≤ |x| + |y|"
+  },
+  {
+    "id": "easy_nt_1",
+    "description": "Divisibility of squares.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_nt_1 (n : ℕ) : n ∣ n^2"
+  },
+  {
+    "id": "easy_nt_2",
+    "description": "Parity of even numbers.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_nt_2 (n : ℕ) (h : Even n) : ∃ k, n = 2*k"
+  },
+  {
+    "id": "easy_set_1",
+    "description": "Subset reflexivity.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_set_1 (A : Set ℝ) : A ⊆ A"
+  },
+  {
+    "id": "easy_top_1",
+    "description": "Continuity of constant function.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_top_1 : Continuous fun x : ℝ => (5 : ℝ)"
+  },
+  {
+    "id": "easy_calc_1",
+    "description": "Integral of zero is zero.",
+    "header": "import Mathlib\nopen MeasureTheory",
+    "theorem": "theorem easy_calc_1 : ∫ x in (0)..1, (0 : ℝ) = 0"
+  },
+  {
+    "id": "easy_finset_1",
+    "description": "Sum of a singleton.",
+    "header": "import Mathlib",
+    "theorem": "theorem easy_finset_1 : ∑ x in ({3} : Finset ℕ), x = 3"
+  }
+]
