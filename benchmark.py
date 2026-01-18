@@ -4,16 +4,13 @@
 import json
 import os
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 from google import genai
 
-# Config
 MODEL = "gemini-2.0-flash"
-TIMEOUT = 120  # seconds for Lean compilation
-MATHLIB_VERSION = "v4.15.0"
+TIMEOUT = 120
 
 SYSTEM_PROMPT = """You are a Lean 4 theorem prover. Given a theorem statement, produce a complete proof.
 
