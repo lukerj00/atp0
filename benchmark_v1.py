@@ -375,7 +375,7 @@ def main():
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
-            "config": {"k": args.k, "r": args.r, "mode": mode, "problems": args.problems},
+            "config": {"k": args.k, "r": args.r, "mode": mode, "timeout": args.timeout, "max_parallel": args.max_parallel, "problems": args.problems},
             "score": f"{solved}/{len(problems)}",
             "pass_at_1": pass_at_1,
             "repair_successes": repair_successes,
