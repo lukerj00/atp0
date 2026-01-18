@@ -9,7 +9,7 @@ from pathlib import Path
 
 from google import genai
 
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.5-flash"
 TIMEOUT = 120
 
 SYSTEM_PROMPT = """You are a Lean 4 theorem prover. Given a theorem statement, produce a complete proof.
@@ -86,10 +86,14 @@ def main():
 
     # Setup Gemini
     global client
+    # Prefer GEMINI_API_KEY, fall back to GOOGLE_API_KEY
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         print("Error: Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable")
         return
+    # Set both to avoid SDK warning and ensure correct key is used
+    os.environ["GEMINI_API_KEY"] = api_key
+    os.environ["GOOGLE_API_KEY"] = api_key
     client = genai.Client(api_key=api_key)
 
     results = []

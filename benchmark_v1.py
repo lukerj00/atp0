@@ -16,6 +16,7 @@ from google import genai
 LEAN_PROJECT = Path(__file__).parent / "lean_project"
 KIMINA_URL = "https://lean.cajal.org/api/check"
 TIMEOUT = 120
+MODEL = "gemini-2.5-flash"
 
 PROPOSE_PROMPT = """You are a Lean 4 theorem prover.
 
@@ -70,7 +71,7 @@ def generate_proofs(theorem: str, k: int) -> list[str]:
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=MODEL,
                 contents=prompt,
                 config={"temperature": 0.7}
             )
@@ -96,7 +97,7 @@ def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> lis
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=MODEL,
                 contents=prompt,
                 config={"temperature": 0.8}
             )
@@ -327,10 +328,14 @@ def main():
 
     # Setup
     global client
+    # Prefer GEMINI_API_KEY, fall back to GOOGLE_API_KEY
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        print("Error: Set GEMINI_API_KEY")
+        print("Error: Set GEMINI_API_KEY or GOOGLE_API_KEY")
         return
+    # Set both to avoid SDK warning and ensure correct key is used
+    os.environ["GEMINI_API_KEY"] = api_key
+    os.environ["GOOGLE_API_KEY"] = api_key
     client = genai.Client(api_key=api_key)
 
     problems_path = Path(__file__).parent / "problems" / args.problems
@@ -375,7 +380,7 @@ def main():
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
-            "config": {"k": args.k, "r": args.r, "mode": mode, "timeout": args.timeout, "max_parallel": args.max_parallel, "problems": args.problems},
+            "config": {"version": "v1", "model": MODEL, "k": args.k, "r": args.r, "mode": mode, "timeout": args.timeout, "max_parallel": args.max_parallel, "problems": args.problems},
             "score": f"{solved}/{len(problems)}",
             "pass_at_1": pass_at_1,
             "repair_successes": repair_successes,
