@@ -7,7 +7,11 @@ import subprocess
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 from google import genai
+
+# Load .env file from script directory
+load_dotenv(Path(__file__).parent / ".env")
 
 MODEL = "gemini-2.5-flash"
 TIMEOUT = 120

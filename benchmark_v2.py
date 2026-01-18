@@ -13,7 +13,11 @@ from pathlib import Path
 from threading import Lock
 
 import requests
+from dotenv import load_dotenv
 from google import genai
+
+# Load .env file from script directory
+load_dotenv(Path(__file__).parent / ".env")
 
 LEAN_PROJECT = Path(__file__).parent / "lean_project"
 KIMINA_URL = "https://lean.cajal.org/api/check"

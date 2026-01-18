@@ -16,3 +16,6 @@ results/*.json
 
 # Claude
 .claude/
+
+# Environment
+.env
