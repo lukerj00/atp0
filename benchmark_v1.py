@@ -3,47 +3,25 @@
 
 import argparse
 import json
-import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
 from zoneinfo import ZoneInfo
 
-import requests
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 
-# Load .env file from script directory
-load_dotenv(Path(__file__).parent / ".env")
+from common import (
+    LEAN_PROJECT, MODEL, TIMEOUT,
+    PROPOSE_PROMPT,
+    create_client, log,
+    clean_proof, generate_proofs,
+    verify_batch_server
+)
 
-LEAN_PROJECT = Path(__file__).parent / "lean_project"
-KIMINA_URL = "https://lean.cajal.org/api/check"
-TIMEOUT = 120
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-
-PROPOSE_PROMPT = """You are a Lean 4 theorem prover.
-
-TASK: Produce exactly {k} DIFFERENT Lean proof candidates for the theorem below.
-
-RULES:
-- Output ONLY valid JSON: {{"candidates":[{{"strategy":"<tag>","proof":"<proof starting with by>"}}, ...]}}
-- Each proof MUST start with `by`
-- Do NOT include imports, theorem headers, or explanations
-- Do NOT use `sorry`
-- Candidates must use DIFFERENT strategies
-
-STRATEGY TAGS: simp, aesop, induction, cases, algebra, have_chain, calc, inequalities
-
-THEOREM:
-{theorem}
-
-K = {k}"""
-
-REPAIR_PROMPT = """You are repairing Lean 4 proofs.
+# V1 uses simpler repair prompt without error classification
+REPAIR_PROMPT_V1 = """You are repairing Lean 4 proofs.
 
 THEOREM:
 {theorem}
@@ -64,46 +42,12 @@ RULES:
 
 R = {r}"""
 
+# Module-level client (set in main)
 client = None
-print_lock = Lock()
 
-def log(msg: str, end="\n", flush=True):
-    """Thread-safe print."""
-    with print_lock:
-        print(msg, end=end, flush=flush)
-
-def generate_proofs(theorem: str, k: int) -> list[str]:
-    """Generate K diverse proof candidates."""
-    prompt = PROPOSE_PROMPT.format(theorem=theorem, k=k)
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)
-                )
-            )
-            text = response.text.strip()
-            # Extract JSON from markdown code blocks
-            if "```" in text:
-                text = text.split("```")[1].replace("json", "").strip()
-            data = json.loads(text)
-            proofs = [c["proof"].strip() for c in data.get("candidates", [])]
-            return [p if p.startswith("by") else f"by\n  {p}" for p in proofs if p]
-        except Exception as e:
-            if "429" in str(e) and attempt < 2:
-                time.sleep(15 * (attempt + 1))
-                continue
-            if attempt == 2:
-                return []
-            continue
-    return []
-
-def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> list[str]:
-    """Generate R repair candidates."""
-    prompt = REPAIR_PROMPT.format(theorem=theorem, failed_proof=failed_proof, error=error[:500], r=r)
+def generate_repairs_v1(theorem: str, failed_proof: str, error: str, r: int) -> list[str]:
+    """Generate R repair candidates (V1 simple prompt)."""
+    prompt = REPAIR_PROMPT_V1.format(theorem=theorem, failed_proof=failed_proof, error=error[:500], r=r)
     for attempt in range(3):
         try:
             response = client.models.generate_content(
@@ -115,7 +59,6 @@ def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> lis
                 )
             )
             text = response.text.strip()
-            # Extract JSON from markdown code blocks
             if "```" in text:
                 text = text.split("```")[1].replace("json", "").strip()
             data = json.loads(text)
@@ -128,79 +71,7 @@ def generate_repairs(theorem: str, failed_proof: str, error: str, r: int) -> lis
             return []
     return []
 
-def clean_proof(proof: str) -> str:
-    """Clean proof text: remove markdown, ensure starts with 'by'."""
-    if "```" in proof:
-        proof = "\n".join(l for l in proof.split("\n") if "```" not in l)
-    proof = proof.strip()
-    if not proof.startswith("by"):
-        proof = f"by\n  {proof}"
-    return proof
-
-def verify_batch_server(header: str, theorem: str, proofs: list[str], timeout: int = 60) -> list[dict]:
-    """Verify multiple proofs in a single batch request to Kimina server."""
-    # Build snippets for batch request
-    snippets = []
-    cleaned_proofs = []
-    for i, proof in enumerate(proofs):
-        cleaned = clean_proof(proof)
-        cleaned_proofs.append(cleaned)
-        lean_code = f"{header}\n\n{theorem} :=\n{cleaned}\n"
-        snippets.append({"id": f"proof_{i}", "code": lean_code})
-
-    start = time.time()
-    try:
-        response = requests.post(
-            KIMINA_URL,
-            json={"snippets": snippets, "timeout": timeout, "reuse": True},
-            timeout=timeout + 10
-        )
-        response.raise_for_status()
-        data = response.json()
-        elapsed = int((time.time() - start) * 1000)
-
-        results = []
-        for i, res in enumerate(data.get("results", [])):
-            # Check for top-level error
-            error = res.get("error")
-            resp = res.get("response") or {}
-
-            # Check for error messages in response
-            messages = resp.get("messages", [])
-            error_msgs = [m for m in messages if m.get("severity") == "error"]
-
-            # Check for sorry
-            has_sorry = "sorry" in str(resp).lower()
-
-            success = error is None and not error_msgs and not has_sorry
-
-            error_excerpt = None
-            if not success:
-                if error:
-                    error_excerpt = error[:300]
-                elif error_msgs:
-                    error_excerpt = "\n".join(m.get("data", "")[:100] for m in error_msgs[:3])
-                elif has_sorry:
-                    error_excerpt = "uses sorry"
-                else:
-                    error_excerpt = "unknown error"
-
-            results.append({
-                "idx": i,
-                "success": success,
-                "time_ms": int(res.get("time", 0) * 1000) or elapsed // len(proofs),
-                "proof": cleaned_proofs[i],
-                "error_excerpt": error_excerpt,
-                "output": str(res)[:500]
-            })
-        return sorted(results, key=lambda x: x["idx"])
-    except Exception as e:
-        # Return all failures on error
-        return [
-            {"idx": i, "success": False, "time_ms": 0, "proof": clean_proof(p),
-             "error_excerpt": f"Server error: {e}", "output": str(e)}
-            for i, p in enumerate(proofs)
-        ]
+# ============== Local Verification ==============
 
 def verify_proof_local(header: str, theorem: str, proof: str, idx: int, prob_idx: int = 0) -> dict:
     """Verify a single proof locally, return result dict."""
@@ -243,8 +114,8 @@ def verify_proof_local(header: str, theorem: str, proof: str, idx: int, prob_idx
     finally:
         verify_file.unlink(missing_ok=True)
 
-def verify_many_local(header: str, theorem: str, proofs: list[str], max_parallel: int, executor: ThreadPoolExecutor, prob_idx: int = 0) -> list[dict]:
-    """Verify multiple proofs in parallel using local Lean (slow)."""
+def verify_many_local(header: str, theorem: str, proofs: list[str], executor: ThreadPoolExecutor, prob_idx: int = 0) -> list[dict]:
+    """Verify multiple proofs in parallel using local Lean."""
     results = []
     futures = {executor.submit(verify_proof_local, header, theorem, p, i, prob_idx): i for i, p in enumerate(proofs)}
     for future in as_completed(futures):
@@ -254,16 +125,19 @@ def verify_many_local(header: str, theorem: str, proofs: list[str], max_parallel
 def verify_proofs(header: str, theorem: str, proofs: list[str], args, executor: ThreadPoolExecutor, prob_idx: int = 0) -> list[dict]:
     """Verify proofs using server (default) or local Lean."""
     if args.local:
-        return verify_many_local(header, theorem, proofs, args.max_parallel, executor, prob_idx)
+        return verify_many_local(header, theorem, proofs, executor, prob_idx)
     else:
-        return verify_batch_server(header, theorem, proofs, timeout=args.timeout)
+        results = verify_batch_server(header, theorem, proofs, timeout=args.timeout)
+        return sorted(results, key=lambda x: x["idx"])
+
+# ============== Problem Processing ==============
 
 def process_problem(prob: dict, prob_idx: int, args, executor: ThreadPoolExecutor) -> dict:
     """Process a single problem, return result dict."""
     prob_id = prob["id"]
 
     log(f"  Generating {args.k} candidates...", end=" ")
-    proofs = generate_proofs(prob["theorem"], args.k)
+    proofs = generate_proofs(client, prob["theorem"], args.k)
     log(f"got {len(proofs)}")
 
     if not proofs:
@@ -297,7 +171,7 @@ def process_problem(prob: dict, prob_idx: int, args, executor: ThreadPoolExecuto
     best_failure = min(verify_results, key=lambda x: len(x.get("error_excerpt", "") or ""))
 
     log(f"  Repairing (based on candidate {best_failure['idx']})...", end=" ")
-    repairs = generate_repairs(prob["theorem"], best_failure["proof"], best_failure["error_excerpt"] or "", args.r)
+    repairs = generate_repairs_v1(prob["theorem"], best_failure["proof"], best_failure["error_excerpt"] or "", args.r)
     log(f"got {len(repairs)}")
 
     repair_results = []
@@ -328,6 +202,8 @@ def process_problem(prob: dict, prob_idx: int, args, executor: ThreadPoolExecuto
         "repair_win": False
     }
 
+# ============== Main ==============
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--k", type=int, default=3, help="Number of candidates to generate")
@@ -339,30 +215,8 @@ def main():
     parser.add_argument("--timeout", type=int, default=60, help="Timeout per verification batch (server mode)")
     args = parser.parse_args()
 
-    # Setup
     global client
-    # Prefer GEMINI_API_KEY, fall back to GOOGLE_API_KEY
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print("Error: Set GEMINI_API_KEY or GOOGLE_API_KEY")
-        return
-    # Set both to avoid SDK warning and ensure correct key is used
-    os.environ["GEMINI_API_KEY"] = api_key
-    os.environ["GOOGLE_API_KEY"] = api_key
-    # Configure client with longer timeout and automatic retries
-    client = genai.Client(
-        api_key=api_key,
-        http_options=types.HttpOptions(
-            timeout=120000,  # 120s timeout
-            retry_options=types.HttpRetryOptions(
-                attempts=3,
-                initial_delay=1.0,
-                max_delay=30.0,
-                exp_base=2.0,
-                http_status_codes=[429, 500, 502, 503, 504]
-            )
-        )
-    )
+    client = create_client()
 
     problems_path = Path(__file__).parent / "problems" / args.problems
     with open(problems_path) as f:
@@ -374,10 +228,9 @@ def main():
     repair_successes = 0
 
     mode = "local" if args.local else "server"
-    print(f"V1 Benchmark: K={args.k}, R={args.r}, mode={mode}, problems={args.problems}")
+    print(f"V1 Benchmark: K={args.k}, R={args.r}, mode={mode}, model={MODEL}, problems={args.problems}")
     print(f"Running on {len(problems)} problems...\n")
 
-    # Shared executor for all Lean verifications
     with ThreadPoolExecutor(max_workers=args.max_parallel) as executor:
         for i, prob in enumerate(problems):
             log(f"[{i+1}/{len(problems)}] {prob['id']}")

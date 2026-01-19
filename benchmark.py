@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
-"""Minimal single-shot Lean 4 prover benchmark using Gemini Flash."""
+"""V0 benchmark: Minimal single-shot Lean 4 prover using Gemini Flash."""
 
 import json
-import os
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 
-# Load .env file from script directory
-load_dotenv(Path(__file__).parent / ".env")
-
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-TIMEOUT = 120
+from common import LEAN_PROJECT, MODEL, TIMEOUT, create_client
 
 SYSTEM_PROMPT = """You are a Lean 4 theorem prover. Given a theorem statement, produce a complete proof.
 
@@ -43,12 +38,9 @@ def generate_proof(statement: str, retries: int = 3) -> str:
             return response.text.strip()
         except Exception as e:
             if "429" in str(e) and attempt < retries - 1:
-                time.sleep(15 * (attempt + 1))  # backoff
+                time.sleep(15 * (attempt + 1))
                 continue
             raise
-
-
-LEAN_PROJECT = Path(__file__).parent / "lean_project"
 
 def verify_lean(header: str, theorem: str, proof: str) -> tuple[bool, str]:
     """Verify a Lean proof by compiling it in the pre-built project."""
@@ -94,33 +86,13 @@ def main():
 
     # Setup Gemini
     global client
-    # Prefer GEMINI_API_KEY, fall back to GOOGLE_API_KEY
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print("Error: Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable")
-        return
-    # Set both to avoid SDK warning and ensure correct key is used
-    os.environ["GEMINI_API_KEY"] = api_key
-    os.environ["GOOGLE_API_KEY"] = api_key
-    # Configure client with longer timeout and automatic retries
-    client = genai.Client(
-        api_key=api_key,
-        http_options=types.HttpOptions(
-            timeout=120000,  # 120s timeout
-            retry_options=types.HttpRetryOptions(
-                attempts=3,
-                initial_delay=1.0,
-                max_delay=30.0,
-                exp_base=2.0,
-                http_status_codes=[429, 500, 502, 503, 504]
-            )
-        )
-    )
+    client = create_client()
 
     results = []
     solved = 0
 
-    print(f"Running benchmark on {len(problems)} problems...\n")
+    print(f"V0 Benchmark: model={MODEL}")
+    print(f"Running on {len(problems)} problems...\n")
 
     for i, prob in enumerate(problems):
         print(f"[{i+1}/{len(problems)}] {prob['id']}: ", end="", flush=True)
@@ -159,10 +131,13 @@ def main():
     print(f"{'='*50}")
 
     # Save results
-    results_path = Path(__file__).parent / "results" / f"v0_{int(time.time())}.json"
+    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    timestamp_readable = now.strftime("%y%m%d-%H%M")
+    results_path = Path(__file__).parent / "results" / f"v0_{timestamp_readable}.json"
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, "w") as f:
         json.dump({
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S PST"),
             "config": {"version": "v0", "model": MODEL},
             "score": f"{solved}/{len(problems)}",
             "results": results
