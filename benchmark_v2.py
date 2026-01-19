@@ -25,7 +25,7 @@ load_dotenv(Path(__file__).parent / ".env")
 LEAN_PROJECT = Path(__file__).parent / "lean_project"
 KIMINA_URL = "https://lean.cajal.org/api/check"
 TIMEOUT = 120
-MODEL = "gemini-2.5-flash"
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 PROPOSE_PROMPT = """You are a Lean 4 theorem prover.
 

@@ -14,7 +14,7 @@ from google.genai import types
 # Load .env file from script directory
 load_dotenv(Path(__file__).parent / ".env")
 
-MODEL = "gemini-2.5-flash"
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 TIMEOUT = 120
 
 SYSTEM_PROMPT = """You are a Lean 4 theorem prover. Given a theorem statement, produce a complete proof.
